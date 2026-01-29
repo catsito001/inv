@@ -80,7 +80,11 @@ const ITEM_TYPES = {
     { name: 'escaleras', label: 'Escaleras', type: 'text', placeholder: 'Ej: Concreto...' },
     { name: 'rampas', label: 'Rampas', type: 'text', placeholder: 'Ej: Concreto estriado...' },
     { name: 'barandas', label: 'Barandas', type: 'text', placeholder: 'Ej: Tubo de fierro...' }
-  ]}
+  ]},
+   OTRO: {
+    label: 'Otro',
+    fields: [] // ← sin campos técnicos
+  }
 };
 
 /* ============================
@@ -412,6 +416,10 @@ function renderLocation(container){
   document.body.appendChild(fab);
 }
 
+
+
+
+
 function renderForm(container){
   const existingFab = document.querySelector('.fixed.bottom-6');
   if(existingFab) existingFab.remove();
@@ -422,11 +430,19 @@ function renderForm(container){
   const attributes = editing ? (editing.attributes || {}) : {};
   const photos = editing ? (editing.photos || []) : [];
 
+  // 1. RECUPERAR DATOS PREVIOS
+  // Ahora el objeto guardado tendrá { name, l, w }
+  let areaDetails = [];
+  try {
+    if(attributes['area_json']) areaDetails = JSON.parse(attributes['area_json']);
+  } catch(e){ areaDetails = []; }
+
   container.className = "pb-0 bg-white min-h-full"; 
 
   const formHtml = `
     <form id="inventoryForm" class="flex flex-col h-full">
-      <div class="px-5 py-20 space-y-6 pb-28"> <div class="space-y-4">
+      <div class="px-5 py-20 space-y-6 pb-28"> 
+        <div class="space-y-4">
           <div>
             <label class="block text-xs font-bold text-slate-500 uppercase mb-1.5">Tipo de Estructura</label>
             <div class="relative">
@@ -438,14 +454,39 @@ function renderForm(container){
           </div>
           
           <div>
-            <label class="block text-xs font-bold text-slate-500 uppercase mb-1.5">Nombre / Identificador</label>
-            <input id="nameInput" type="text" value="${escapeHtml(nameVal)}" required placeholder="Ej: Muro Perimétrico Norte" class="w-full p-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition placeholder-slate-300" />
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1.5">Nombre / Identificador General</label>
+            <input id="nameInput" type="text" value="${escapeHtml(nameVal)}" required placeholder="Ej: Casa Principal" class="w-full p-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition placeholder-slate-300" />
           </div>
         </div>
 
         <hr class="border-slate-100">
+        
+        <div class="bg-blue-50 rounded-xl p-4 border border-blue-100 space-y-3">
+          <div class="flex justify-between items-center">
+             <h3 class="text-xs font-bold text-blue-800 uppercase flex items-center gap-2">
+               📐 Áreas Detalladas
+             </h3>
+             <span class="text-blue-600 font-bold text-lg"><span id="totalAreaDisplay">0.00</span> m²</span>
+          </div>
+          
+          <div class="space-y-2">
+             <input type="text" id="inputNombreArea" placeholder="Nombre (Ej: Cocina, Baño...)" class="w-full p-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:border-blue-500 placeholder-blue-300">
+             
+             <div class="flex gap-2">
+                <div class="flex-1">
+                   <input type="number" id="inputLargo" step="0.01" placeholder="Largo" class="w-full p-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:border-blue-500">
+                </div>
+                <div class="flex items-center text-slate-400 font-bold">x</div>
+                <div class="flex-1">
+                   <input type="number" id="inputAncho" step="0.01" placeholder="Ancho" class="w-full p-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:border-blue-500">
+                </div>
+                <button type="button" id="btnAddArea" class="bg-blue-600 text-white w-12 rounded-lg flex items-center justify-center font-bold text-xl shadow-sm active:scale-95 transition">+</button>
+             </div>
+          </div>
 
-        <div class="space-y-4">
+          <div id="areaListContainer" class="space-y-2 mt-2"></div>
+        </div>
+        <div id="detailsSection" class="space-y-4">
           <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
             <span class="w-1 h-4 bg-blue-500 rounded-full"></span> Detalles Técnicos
           </h3>
@@ -486,11 +527,81 @@ function renderForm(container){
   `;
   container.innerHTML = formHtml;
 
+  // 2. LÓGICA DE ÁREAS (JAVASCRIPT)
+  const areaListEl = document.getElementById('areaListContainer');
+  const totalDisplayEl = document.getElementById('totalAreaDisplay');
+  const inpName = document.getElementById('inputNombreArea'); // Nuevo input
+  const inpL = document.getElementById('inputLargo');
+  const inpW = document.getElementById('inputAncho');
+
+  function updateAreaUI() {
+    areaListEl.innerHTML = '';
+    let total = 0;
+    
+    areaDetails.forEach((item, idx) => {
+      // Manejo de datos antiguos que no tenían nombre
+      const displayName = item.name ? item.name : `Zona ${idx+1}`;
+      const subTotal = item.l * item.w;
+      total += subTotal;
+      
+      const row = document.createElement('div');
+      row.className = "flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 text-xs shadow-sm";
+      row.innerHTML = `
+        <div class="flex flex-col">
+          <span class="font-bold text-blue-800 uppercase text-[10px]">${idx+1}. ${escapeHtml(displayName)}</span>
+          <span class="text-slate-600 font-mono mt-0.5">${item.l.toFixed(2)} x ${item.w.toFixed(2)}</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="font-bold text-slate-800 text-sm">${subTotal.toFixed(2)} m²</span>
+          <button type="button" onclick="removeArea(${idx})" class="text-red-500 bg-red-50 w-7 h-7 rounded flex items-center justify-center font-bold">×</button>
+        </div>
+      `;
+      areaListEl.appendChild(row);
+    });
+    
+    totalDisplayEl.innerText = total.toFixed(2);
+  }
+
+  window.removeArea = (idx) => {
+    areaDetails.splice(idx, 1);
+    updateAreaUI();
+  };
+
+  document.getElementById('btnAddArea').addEventListener('click', () => {
+    const l = parseFloat(inpL.value);
+    const w = parseFloat(inpW.value);
+    const name = inpName.value.trim() || `Zona ${areaDetails.length + 1}`; // Nombre por defecto si está vacío
+
+    if(l > 0 && w > 0) {
+      areaDetails.push({ name: name, l: l, w: w });
+      // Limpiar inputs
+      inpL.value = '';
+      inpW.value = '';
+      inpName.value = '';
+      inpName.focus(); // Volver el foco al nombre para seguir agregando rápido
+      updateAreaUI();
+    } else {
+      alert('Ingresa Largo y Ancho válidos');
+    }
+  });
+
+  updateAreaUI();
+
+  // 3. RESTO DE LA LÓGICA
   const renderDyn = (tKey) => {
     const cont = document.getElementById('dynamicFields');
     const extraCont = document.getElementById('extraFields');
+    const detailsSection = document.getElementById('detailsSection');
+    
     cont.innerHTML = '';
     extraCont.innerHTML = '';
+
+    if (tKey === 'OTRO') {
+      if(detailsSection) detailsSection.style.display = 'none';
+      return;
+    } else {
+      if(detailsSection) detailsSection.style.display = 'block';
+    }
     
     const fields = ITEM_TYPES[tKey]?.fields || [];
     fields.forEach(f => {
@@ -578,10 +689,32 @@ function renderForm(container){
     }
   });
 
+  // 4. GUARDAR
   document.getElementById('inventoryForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    
     const attrs = {};
     document.querySelectorAll('[data-attr]').forEach(el => attrs[el.getAttribute('data-attr')] = el.value.trim());
+
+    // --- PROCESAMIENTO DE ÁREAS PARA EXCEL ---
+    let areaTotal = 0;
+    
+    areaDetails.forEach((item, index) => {
+        const sub = item.l * item.w;
+        areaTotal += sub;
+        
+        // AQUÍ ESTÁ EL CAMBIO PARA EL EXCEL:
+        // Columna: "Area 1", "Area 2"...
+        // Valor: "COCINA: 2.00 x 3.00 = 6.00 m²"
+        const cleanName = (item.name || 'Zona').toUpperCase();
+        attrs[`Area ${index + 1}`] = `${cleanName}: ${item.l.toFixed(2)} x ${item.w.toFixed(2)} = ${sub.toFixed(2)} m²`;
+    });
+
+    if (areaDetails.length > 0) {
+        attrs['Area Total Final'] = `${areaTotal.toFixed(2)} m²`;
+        attrs['area_json'] = JSON.stringify(areaDetails);
+    }
+    // -----------------------------------------
 
     const newItem = {
       id: editing ? editing.id : Date.now().toString(),
@@ -600,6 +733,8 @@ function renderForm(container){
 
   document.getElementById('cancelForm').addEventListener('click', () => showLocationView(selectedLocation));
 }
+
+
 
 /* ============================
    MODAL CROPPER
